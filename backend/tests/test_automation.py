@@ -1,4 +1,5 @@
 import asyncio
+import os
 import tempfile
 import threading
 import unittest
@@ -10,17 +11,23 @@ from backend.app.services import automation
 
 
 class Handler(BaseHTTPRequestHandler):
-    body = b"""<html><body><h1>Application</h1><form>
+    body = b"""<html><body><h1>Application</h1><form method='post'>
       <label>Full name <input name='name'></label>
       <label>Email <input type='email' name='email'></label>
       <button>Submit application</button></form></body></html>"""
     def do_GET(self):
         self.send_response(200);self.send_header("Content-Type","text/html");self.end_headers();self.wfile.write(self.body)
+    def do_POST(self):
+        self.send_response(200);self.send_header("Content-Type","text/html");self.end_headers();self.wfile.write(b"<html><body>Thank you for applying. Your application has been received.</body></html>")
     def log_message(self,*args):pass
 
 
 class BrowserAutomationTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
+        Handler.body = b"""<html><body><h1>Application</h1><form method='post'>
+          <label>Full name <input name='name'></label>
+          <label>Email <input type='email' name='email'></label>
+          <button>Submit application</button></form></body></html>"""
         self.server=HTTPServer(("127.0.0.1",0),Handler)
         self.thread=threading.Thread(target=self.server.serve_forever,daemon=True);self.thread.start()
         self.tmp=tempfile.TemporaryDirectory();self.old_profile=automation.PROFILE_ROOT;automation.PROFILE_ROOT=Path(self.tmp.name)
@@ -50,6 +57,16 @@ class BrowserAutomationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(automation.ats_for_url("https://boards.greenhouse.io/example"),"greenhouse")
         self.assertEqual(automation.ats_for_url("https://jobs.lever.co/example"),"lever")
         self.assertRegex("Thank you for applying. Your application has been received.",automation.CONFIRMATION)
+
+    async def test_local_submission_confirmation_and_emergency_guard(self):
+        url=f"http://127.0.0.1:{self.server.server_port}/apply"
+        async def stopped():return False
+        with patch.object(automation,"ALLOW_SUBMISSIONS",True),patch.dict(os.environ,{"AUTOMATION_ALLOWED_HOSTS":"127.0.0.1"}):
+            prevented=await automation.prepare_application(url,{},candidate_id=4,submit=True,submission_guard=stopped,timeout_ms=10000)
+            self.assertEqual(prevented["status"],"stopped")
+            confirmed=await automation.prepare_application(url,{},candidate_id=5,submit=True,timeout_ms=10000)
+        self.assertEqual(confirmed["status"],"confirmed",confirmed)
+        self.assertIn("thank you",confirmed["confirmation"].lower())
 
 
 if __name__=="__main__":unittest.main()

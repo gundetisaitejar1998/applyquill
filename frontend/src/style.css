@@ -6,3 +6,5 @@
 .profileEditor{display:grid;gap:10px}.profileEditor textarea{min-height:72px;resize:vertical}.profileEditor label{font-size:12px}.profileEditor input[type=checkbox]{margin-right:8px}
 
 .automationPanel{margin:20px 0}.automationLimits{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.automationLimits label{font-size:12px;color:#64748b}.automationLimits input{margin-top:6px}.automationToggles{display:flex;flex-wrap:wrap;gap:16px;margin:14px 0;font-size:13px}.automationToggles input{margin-right:6px}.automationActions{display:flex;flex-wrap:wrap;gap:8px}.button.danger{background:#b91c1c;color:white;border:0}.automationPanel .detailLine{padding:8px 0;border-bottom:1px solid #edf0f5}@media(max-width:800px){.automationLimits{grid-template-columns:repeat(2,minmax(0,1fr))}.automationToggles{display:grid}}
+
+.settingsStack{display:grid;gap:16px;align-content:start}.settingsStack .automationPanel{margin:0}.statsGrid{grid-template-columns:repeat(3,minmax(0,1fr))}@media(max-width:800px){.statsGrid{grid-template-columns:repeat(2,minmax(0,1fr))}}

@@ -1,6 +1,6 @@
 from contextlib import asynccontextmanager
 from pathlib import Path
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import json, re, uuid, logging, os, asyncio, time, hashlib
 from fastapi import FastAPI, UploadFile, File, HTTPException, Request, Response, Depends
 from fastapi.middleware.cors import CORSMiddleware
@@ -279,6 +279,29 @@ def resume_versions(cid:int,user_id:int|None=Depends(request_user_id)):
     candidate_record(cid,user_id)
     with connect() as db:return [dict(r) for r in db.execute("SELECT id,file_name,sha256,is_active,created_at FROM resume_versions WHERE candidate_id=? ORDER BY id DESC",(cid,))]
 
+@app.put("/api/candidates/{cid}/resume-versions/{version_id}/activate")
+def activate_resume_version(cid:int,version_id:int,user_id:int|None=Depends(request_user_id)):
+    candidate_record(cid,user_id)
+    with connect() as db:
+        version=db.execute("SELECT * FROM resume_versions WHERE id=? AND candidate_id=?",(version_id,cid)).fetchone()
+        if not version:raise HTTPException(404,"Resume version not found for candidate")
+        path=Path(version["file_path"]).resolve()
+        if not path.is_relative_to(UPLOADS.resolve()) or not path.is_file():raise HTTPException(404,"Stored resume file is unavailable")
+        db.execute("UPDATE resume_versions SET is_active=0 WHERE candidate_id=?",(cid,))
+        db.execute("UPDATE resume_versions SET is_active=1 WHERE id=? AND candidate_id=?",(version_id,cid))
+        db.execute("UPDATE candidates SET resume_path=?,resume_name=?,profile_json=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND (? IS NULL OR user_id=?)",(str(path),version["file_name"],version["profile_json"],cid,user_id,user_id))
+        db.execute("DELETE FROM role_maps WHERE candidate_id=?",(cid,))
+    return {"ok":True,"active_version_id":version_id,"message":"Resume version activated. Regenerate the role map and review the extracted candidate facts."}
+
+@app.get("/api/candidates/{cid}/resume-versions/{version_id}/file")
+def download_resume_version(cid:int,version_id:int,user_id:int|None=Depends(request_user_id)):
+    candidate_record(cid,user_id)
+    with connect() as db:version=db.execute("SELECT file_path,file_name FROM resume_versions WHERE id=? AND candidate_id=?",(version_id,cid)).fetchone()
+    if not version:raise HTTPException(404,"Resume version not found for candidate")
+    path=Path(version["file_path"]).resolve()
+    if not path.is_relative_to(UPLOADS.resolve()) or not path.is_file():raise HTTPException(404,"Resume file is unavailable")
+    return FileResponse(path,filename=version["file_name"])
+
 @app.put("/api/candidates/{cid}/verification")
 def verify_profile(cid:int,body:dict,user_id:int|None=Depends(request_user_id)):
     person=candidate_record(cid,user_id);profile=person["profile"]
@@ -410,7 +433,7 @@ def job_sources(user_id:int|None=Depends(request_user_id)):
     with connect() as db: health={r["source"]:dict(r) for r in db.execute("SELECT * FROM source_health").fetchall()}
     for source in sources:
         source["health"]=health.get(source["name"],{})
-    return {"sources":sources,"boards":saved}
+    return {"sources":sources,"boards":saved,"health":list(health.values())}
 
 @app.get("/api/job-sources/health")
 def source_health(user_id:int|None=Depends(request_user_id)):
@@ -636,10 +659,18 @@ def stats(cid:int,user_id:int|None=Depends(request_user_id)):
         apps=db.execute("SELECT status,COUNT(*) n FROM applications WHERE candidate_id=? GROUP BY status",(cid,)).fetchall()
         day_start=datetime.now().astimezone().replace(hour=0,minute=0,second=0,microsecond=0).astimezone(timezone.utc).isoformat().replace('+00:00','Z')
         today=db.execute("SELECT COUNT(*) n FROM jobs WHERE candidate_id=? AND discovered_at>=?",(cid,day_start)).fetchone()["n"]
+        cutoff=datetime.now(timezone.utc)-timedelta(hours=24)
+        published_rows=db.execute("SELECT posted_at FROM jobs WHERE candidate_id=? AND COALESCE(posted_at,'')!=''",(cid,)).fetchall()
+        published_24h=0
+        for item in published_rows:
+            try:
+                posted=datetime.fromisoformat(str(item["posted_at"]).replace("Z","+00:00"))
+                if posted.tzinfo is not None and cutoff<=posted.astimezone(timezone.utc)<=datetime.now(timezone.utc):published_24h+=1
+            except (ValueError,TypeError):pass
         eligible=db.execute("SELECT COUNT(*) n FROM jobs WHERE candidate_id=? AND eligibility_status='eligible'",(cid,)).fetchone()["n"]
         avg=db.execute("SELECT AVG(match_score) n FROM jobs WHERE candidate_id=?",(cid,)).fetchone()["n"]
     statuses={r["status"]:r["n"] for r in apps}
-    return {"jobs":jobs_count,"discovered_today":today,"eligible":eligible,"applications":sum(statuses.values()),"submitted":statuses.get("Submitted",0),"failed":statuses.get("Submission failed",0),"average_match":round(avg or 0),"interviews":statuses.get("Interview",0),"offers":statuses.get("Offer",0),"statuses":statuses}
+    return {"jobs":jobs_count,"discovered_today":today,"published_24h":published_24h,"eligible":eligible,"applications":sum(statuses.values()),"submitted":statuses.get("Submitted",0),"failed":statuses.get("Submission failed",0),"average_match":round(avg or 0),"interviews":statuses.get("Interview",0),"offers":statuses.get("Offer",0),"statuses":statuses}
 
 @app.post("/api/candidates/{cid}/documents/{job_id}")
 def generate_resume(cid:int,job_id:int,body:dict | None = None,user_id:int|None=Depends(request_user_id)):

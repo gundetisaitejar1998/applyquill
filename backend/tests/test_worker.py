@@ -39,6 +39,10 @@ class DurableWorkerTests(unittest.TestCase):
         self.add_job("Designer","B","https://example.test/le","Lever")
         self.assertEqual(enqueue_jobs(self.run_id,self.cid,"prepare",75,10,2,["lever"]),1)
 
+    def test_default_daily_submission_limit_caps_queue_at_ten(self):
+        for n in range(12):self.add_job(f"Designer {n}",f"Company {n}",f"https://example.test/{n}")
+        self.assertEqual(enqueue_jobs(self.run_id,self.cid,"submit",75,10,2),10)
+
     def test_expired_submission_lease_is_manual_verification_not_retried(self):
         job=self.add_job("Designer","A","https://example.test/submit")
         with database.connect() as db:
