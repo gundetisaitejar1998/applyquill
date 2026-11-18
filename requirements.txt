@@ -1,0 +1,13 @@
+fastapi>=0.115,<1
+uvicorn[standard]>=0.34,<1
+python-multipart>=0.0.20
+pypdf>=5.3
+python-docx>=1.1
+httpx>=0.28
+json-repair>=0.64,<1
+reportlab>=4.2
+psycopg[binary]>=3.2,<4
+SQLAlchemy>=2.0,<3
+alembic>=1.14,<2
+playwright>=1.50,<2
+tzdata>=2024.1

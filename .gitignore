@@ -1,0 +1,15 @@
+.venv/
+frontend/node_modules/
+frontend/dist/
+frontend/dist/
+data/*
+!data/.gitkeep
+uploads/*
+!uploads/.gitkeep
+generated/*
+!generated/.gitkeep
+logs/*
+!logs/.gitkeep
+.env
+__pycache__/
+*.py[cod]
