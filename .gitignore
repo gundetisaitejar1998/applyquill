@@ -1,7 +1,8 @@
 .venv/
 frontend/node_modules/
 frontend/dist/
-frontend/dist/
+.vercel/
+
 data/*
 !data/.gitkeep
 uploads/*
@@ -10,6 +11,16 @@ generated/*
 !generated/.gitkeep
 logs/*
 !logs/.gitkeep
+
+# Hard security constraints:
 .env
+.env.*
+*.sqlite
+*.sqlite3
+*.db
+*.pdf
+*.docx
+
 __pycache__/
 *.py[cod]
+*.png
