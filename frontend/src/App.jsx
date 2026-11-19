@@ -42,12 +42,15 @@ import TailoredResumeModal from './components/TailoredResumeModal';
 
 const API = (import.meta.env.VITE_API_BASE || '/api').replace(/\/$/, '');
 
+// Detect whether we are running on Vercel or local host
+const isVercel =
+  typeof window !== 'undefined' &&
+  !window.location.hostname.includes('localhost') &&
+  !window.location.hostname.includes('127.0.0.1');
+
 // Detect whether we should default to Demo Mode (Vercel deployment or VITE_DEMO_MODE=true)
 const isDefaultDemo =
-  import.meta.env.VITE_DEMO_MODE === 'true' ||
-  (typeof window !== 'undefined' &&
-    !window.location.hostname.includes('localhost') &&
-    !window.location.hostname.includes('127.0.0.1'));
+  import.meta.env.VITE_DEMO_MODE === 'true' || isVercel;
 
 function readCookie(name) {
   return document.cookie.split('; ').find(x => x.startsWith(name + '='))?.slice(name.length + 1) || '';
@@ -112,9 +115,9 @@ export default function App() {
   // Tailored preview modal state
   const [previewJob, setPreviewJob] = useState(null);
 
-  // Initialize Demo Mode or Live Backend
+  // Initialize Serverless Web Mode (on Vercel) or Demo Mode or Live Backend
   useEffect(() => {
-    if (demoMode) {
+    if (demoMode || isVercel) {
       setPeople(DEMO_CANDIDATES);
       setCid(1);
       setCandidate(DEMO_CANDIDATES[0]);
@@ -122,11 +125,44 @@ export default function App() {
       setApps(DEMO_APPLICATIONS);
       setStats(DEMO_STATS);
       setRoles(DEMO_ROLES);
-      setRolesMeta({ model: 'Ollama local (qwen2.5:7b-instruct)', notice: 'Evidence-verified role map for Product & UI/UX' });
+      setRolesMeta({
+        model: 'Jobpilot Serverless ATS Engine (Node.js)',
+        notice: 'Real-time multi-source job matching active (Remotive, Arbeitnow, Jobicy, Greenhouse).'
+      });
       setSourceReport(DEMO_SOURCE_REPORT);
       setLocation(DEMO_CANDIDATES[0].location);
       setAuthLoading(false);
       setAuthRequired(false);
+
+      // On startup, immediately fetch live jobs from public APIs
+      fetch('/api/discover-jobs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          query: '',
+          location: '',
+          skills: DEMO_CANDIDATES[0].profile?.skills || [],
+          roles: DEMO_ROLES
+        })
+      })
+        .then(r => (r.ok ? r.json() : null))
+        .then(data => {
+          if (data && data.jobs && data.jobs.length > 0) {
+            setJobs(data.jobs);
+            if (data.source_report) setSourceReport(data.source_report);
+            setStats(prev => ({
+              ...prev,
+              discovered_today: data.jobs.length,
+              eligible: data.jobs.filter(j => (j.match?.score || 0) >= 80).length,
+              average_match: Math.round(data.jobs.reduce((acc, j) => acc + (j.match?.score || 85), 0) / data.jobs.length)
+            }));
+            setNotice(`Connected to live job feeds: Discovered ${data.jobs.length} vacancies across Remotive, Arbeitnow, Jobicy & Greenhouse.`);
+          }
+        })
+        .catch(err => {
+          console.warn('Startup live jobs fetch:', err);
+        });
+
       return;
     }
 
@@ -260,18 +296,115 @@ export default function App() {
     setBusy(true);
     setError('');
 
-    if (demoMode) {
-      const fileName = f.name;
-      setCandidate(prev => ({
-        ...prev,
-        resume_name: fileName,
-        resume_path: `/uploads/resumes/${fileName}`
-      }));
-      setPeople(prev =>
-        prev.map(p => (p.id === cid ? { ...p, resume_name: fileName, resume_path: `/uploads/resumes/${fileName}` } : p))
-      );
-      setNotice('Resume updated in Demo Mode — local parsing runs on localhost');
-      setBusy(false);
+    // Serverless Web Mode (Vercel) or Portfolio Demo Mode
+    if (demoMode || isVercel) {
+      setNotice(`Analyzing "${f.name}" with Jobpilot Serverless ATS Engine...`);
+      try {
+        const reader = new FileReader();
+        reader.onload = async () => {
+          try {
+            const base64 = (reader.result || '').split(',')[1] || '';
+            const resp = await fetch('/api/parse-resume', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                filename: f.name,
+                content_base64: base64
+              })
+            });
+
+            if (!resp.ok) {
+              const errData = await resp.json().catch(() => ({}));
+              throw new Error(errData.error || `HTTP ${resp.status}`);
+            }
+
+            const data = await resp.json();
+            const candName = data.name && data.name !== 'Candidate' ? data.name : (candidate?.name || 'Ramya Narayanan');
+
+            const updatedCandidate = {
+              ...(candidate || {}),
+              name: candName,
+              resume_name: data.filename,
+              resume_path: `/uploads/resumes/${data.filename}`,
+              summary: data.summary,
+              profile: {
+                ...(candidate?.profile || {}),
+                skills: data.skills || [],
+                experience: data.experience || [],
+                portfolio_url: data.profile?.portfolio_url || candidate?.profile?.portfolio_url,
+                linkedin_url: data.profile?.linkedin_url || candidate?.profile?.linkedin_url,
+                work_authorization: data.profile?.work_authorization || 'Authorized for Global Remote',
+                profile_verified: true,
+                extraction_note: data.profile?.extraction_note
+              }
+            };
+
+            setCandidate(updatedCandidate);
+            setPeople(prev => prev.map(p => (p.id === cid ? updatedCandidate : p)));
+            setRoles(data.roles || []);
+            setRolesMeta(data.roles_meta || {
+              model: 'Jobpilot Serverless ATS Engine (Node.js)',
+              notice: `Extracted ${data.skills?.length || 0} skills from ${data.filename}.`
+            });
+
+            setNotice(`Resume "${data.filename}" parsed! Extracted ${data.skills?.length || 0} skills & generated ${data.roles?.length || 0} target roles. Discovering matching live vacancies...`);
+
+            // Immediately trigger live job discovery matching the uploaded resume skills & roles
+            try {
+              const discRes = await fetch('/api/discover-jobs', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  query: data.roles?.[0]?.title ? data.roles[0].title.split(' ')[0] : '',
+                  location: location || '',
+                  posted_range: postedRange,
+                  skills: data.skills || [],
+                  roles: data.roles || []
+                })
+              });
+              if (discRes.ok) {
+                const discData = await discRes.json();
+                if (discData.jobs && discData.jobs.length > 0) {
+                  setJobs(discData.jobs);
+                  if (discData.source_report) setSourceReport(discData.source_report);
+                  setStats(prev => ({
+                    ...prev,
+                    discovered_today: discData.jobs.length,
+                    eligible: discData.jobs.filter(j => (j.match?.score || 0) >= 80).length,
+                    average_match: Math.round(discData.jobs.reduce((acc, j) => acc + (j.match?.score || 85), 0) / discData.jobs.length)
+                  }));
+                  setNotice(`Resume parsed & ${discData.jobs.length} live vacancies matched across Remotive, Arbeitnow, Jobicy & Greenhouse.`);
+                }
+              }
+            } catch (discErr) {
+              console.warn('Job discovery fetch error:', discErr);
+            }
+          } catch (parseErr) {
+            console.error('Parse error:', parseErr);
+            setCandidate(prev => ({
+              ...prev,
+              resume_name: f.name,
+              resume_path: `/uploads/resumes/${f.name}`
+            }));
+            setPeople(prev =>
+              prev.map(p => (p.id === cid ? { ...p, resume_name: f.name, resume_path: `/uploads/resumes/${f.name}` } : p))
+            );
+            setNotice(`Resume updated to ${f.name}. (${parseErr.message})`);
+          } finally {
+            setBusy(false);
+          }
+        };
+
+        reader.onerror = () => {
+          setError('Failed to read resume file from browser.');
+          setBusy(false);
+        };
+
+        reader.readAsDataURL(f);
+      } catch (err) {
+        setError(err.message);
+        setBusy(false);
+      }
       return;
     }
 
@@ -311,12 +444,62 @@ export default function App() {
     setBusy(true);
     setError('');
 
-    if (demoMode) {
-      setTimeout(() => {
+    if (demoMode || isVercel) {
+      try {
+        setNotice('Refreshing evidence-checked role map with Jobpilot ATS Engine...');
+        const skillsText = (candidate?.profile?.skills || []).join(', ');
+        const parseRes = await fetch('/api/parse-resume', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            filename: candidate?.resume_name || 'resume.pdf',
+            text: `${candidate?.name || 'Candidate'}\n${candidate?.summary || ''}\nKey Competencies: ${skillsText}\n${(candidate?.profile?.experience || []).join('\n')}`
+          })
+        });
+
+        if (parseRes.ok) {
+          const data = await parseRes.json();
+          setRoles(data.roles || DEMO_ROLES);
+          setRolesMeta(data.roles_meta || {
+            model: 'Jobpilot Serverless ATS Engine (Node.js)',
+            notice: `Role map refreshed with ${data.roles?.length || 0} evidence-checked target roles.`
+          });
+          setNotice(`Role map refreshed with ${data.roles?.length || DEMO_ROLES.length} target roles. Discovering matching live vacancies...`);
+
+          const discRes = await fetch('/api/discover-jobs', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              query: data.roles?.[0]?.title ? data.roles[0].title.split(' ')[0] : '',
+              location: location || '',
+              posted_range: postedRange,
+              skills: data.skills || candidate?.profile?.skills || [],
+              roles: data.roles || DEMO_ROLES
+            })
+          });
+          if (discRes.ok) {
+            const discData = await discRes.json();
+            if (discData.jobs && discData.jobs.length > 0) {
+              setJobs(discData.jobs);
+              if (discData.source_report) setSourceReport(discData.source_report);
+              setStats(prev => ({
+                ...prev,
+                discovered_today: discData.jobs.length,
+                eligible: discData.jobs.filter(j => (j.match?.score || 0) >= 80).length
+              }));
+            }
+          }
+        } else {
+          setRoles(DEMO_ROLES);
+          setNotice('Role map refreshed with high-confidence Product & UI/UX Design titles.');
+        }
+      } catch (err) {
+        console.warn('discoverRoles fallback error:', err);
         setRoles(DEMO_ROLES);
         setNotice('Role map refreshed with high-confidence Product & UI/UX Design titles.');
+      } finally {
         setBusy(false);
-      }, 500);
+      }
       return;
     }
 
@@ -338,8 +521,44 @@ export default function App() {
     setBusy(true);
     setError('');
 
-    if (demoMode) {
-      setTimeout(() => {
+    if (demoMode || isVercel) {
+      try {
+        setNotice(`Searching live vacancies across Remotive, Arbeitnow, Jobicy, and Greenhouse for "${query || 'All Roles'}"...`);
+        const res = await fetch('/api/discover-jobs', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            query: query.trim(),
+            location: location.trim(),
+            posted_range: postedRange,
+            skills: candidate?.profile?.skills || [],
+            roles: roles.length ? roles : DEMO_ROLES
+          })
+        });
+
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        if (data.jobs && data.jobs.length > 0) {
+          setJobs(data.jobs);
+          if (data.source_report) setSourceReport(data.source_report);
+          setStats(prev => ({
+            ...prev,
+            discovered_today: data.jobs.length,
+            eligible: data.jobs.filter(j => (j.match?.score || 0) >= 80).length,
+            average_match: Math.round(data.jobs.reduce((acc, j) => acc + (j.match?.score || 85), 0) / data.jobs.length)
+          }));
+          setNotice(`Found ${data.jobs.length} live vacancies matching "${query || 'All Roles'}" across Remotive, Arbeitnow, Jobicy & Greenhouse.`);
+        } else {
+          const filtered = DEMO_JOBS.filter(j => {
+            const matchQuery = !query.trim() || j.title.toLowerCase().includes(query.toLowerCase()) || j.company.toLowerCase().includes(query.toLowerCase());
+            const matchLoc = !location.trim() || j.location.toLowerCase().includes(location.toLowerCase());
+            return matchQuery && matchLoc;
+          });
+          setJobs(filtered.length ? filtered : DEMO_JOBS);
+          setNotice(`Displaying ${filtered.length || DEMO_JOBS.length} vacancies.`);
+        }
+      } catch (err) {
+        console.warn('Live search fallback error:', err);
         const filtered = DEMO_JOBS.filter(j => {
           const matchQuery = !query.trim() || j.title.toLowerCase().includes(query.toLowerCase()) || j.company.toLowerCase().includes(query.toLowerCase());
           const matchLoc = !location.trim() || j.location.toLowerCase().includes(location.toLowerCase());
@@ -347,8 +566,9 @@ export default function App() {
         });
         setJobs(filtered.length ? filtered : DEMO_JOBS);
         setNotice(`Found ${filtered.length || DEMO_JOBS.length} vacancies matching "${query || 'Design Roles'}".`);
+      } finally {
         setBusy(false);
-      }, 400);
+      }
       return;
     }
 
@@ -459,7 +679,7 @@ export default function App() {
   };
 
   const saveApplication = async job => {
-    if (demoMode) {
+    if (demoMode || isVercel) {
       if (apps.some(a => a.job_id === job.id)) {
         setNotice('Job is already tracked in your Application Tracker.');
         return;
@@ -498,8 +718,8 @@ export default function App() {
   };
 
   const prepareApplication = async job => {
-    if (demoMode) {
-      setNotice(`Form pre-fill verified for ${job.company}: All required fields mapped with zero hallucination.`);
+    if (demoMode || isVercel) {
+      setNotice(`[Dry-Run Preview] Form pre-fill verified for ${job.company}: All required fields mapped with zero hallucination. Actual browser auto-submission runs on local desktop agent.`);
       return;
     }
     try {
@@ -596,8 +816,16 @@ export default function App() {
 
           <div className="sideStatusRow">
             <span className={emergencyStopped ? 'redDot' : 'greenDot'} />
-            <span>{emergencyStopped ? 'Submissions Halted' : demoMode ? 'Portfolio Demo Mode' : 'Local Host:8000'}</span>
-            <span className="localTag">{demoMode ? 'DEMO' : 'LIVE'}</span>
+            <span>
+              {emergencyStopped
+                ? 'Submissions Halted'
+                : isVercel
+                ? 'Cloud Serverless (Live)'
+                : demoMode
+                ? 'Portfolio Demo Mode'
+                : 'Local Host:8000'}
+            </span>
+            <span className="localTag">{isVercel ? 'SERVERLESS' : (demoMode ? 'DEMO' : 'LIVE')}</span>
           </div>
         </div>
       </aside>
@@ -611,18 +839,22 @@ export default function App() {
           </div>
 
           <div className="topRight">
-            {/* Demo / Live Mode toggle pill */}
+            {/* Demo / Live / Serverless Mode toggle pill */}
             <button
-              className={`modeBadge ${demoMode ? 'demo' : 'live'}`}
+              className={`modeBadge ${demoMode || isVercel ? 'demo' : 'live'}`}
               style={{ border: 'none' }}
               onClick={() => {
+                if (isVercel) {
+                  setNotice('Running in Cloud Serverless Mode on Vercel with real-time job feeds & ATS resume parsing.');
+                  return;
+                }
                 setDemoMode(!demoMode);
                 setNotice(!demoMode ? 'Switched to Portfolio Demo Mode (Offline / Behance)' : 'Switched to Live Backend Mode');
               }}
-              title="Click to toggle between Portfolio Demo Mode and Live Mode"
+              title={isVercel ? 'Jobpilot Serverless Web Mode (Vercel)' : 'Click to toggle between Portfolio Demo Mode and Live Mode'}
             >
               <Sparkles size={13} />
-              <span>{demoMode ? 'Portfolio Demo' : 'Live Mode'}</span>
+              <span>{isVercel ? 'Cloud Serverless' : (demoMode ? 'Portfolio Demo' : 'Live Mode')}</span>
             </button>
 
             {/* Candidate Selector */}
@@ -1386,8 +1618,8 @@ function AutomationPanel({ cid, demoMode, emergencyStopped, onEmergencyStop, onR
       setMessage('Cannot start: Emergency STOP is active.');
       return;
     }
-    if (demoMode) {
-      setMessage('Preparation run completed: 14 vacancies discovered, 3 verified for submission.');
+    if (demoMode || isVercel) {
+      setMessage('Playwright Dry-Run Preview: 14 vacancies evaluated, 3 verified for submission. Actual browser auto-submission runs on local desktop agent.');
       return;
     }
     try {
@@ -1410,9 +1642,35 @@ function AutomationPanel({ cid, demoMode, emergencyStopped, onEmergencyStop, onR
           <h2>Automation & Guardrail Controls</h2>
           <p>Durable Queue · Asia/Kolkata schedule · strict eligibility gating</p>
         </div>
-        <span className={emergencyStopped ? 'sourceBadge' : 'sourceBadge'} style={{ background: emergencyStopped ? '#FEE2E2' : '#E7F6EA', color: emergencyStopped ? '#DC2626' : '#0BA02C' }}>
-          {emergencyStopped ? 'EMERGENCY STOPPED' : 'IDLE / READY'}
-        </span>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+          {(demoMode || isVercel) && (
+            <span
+              style={{
+                fontSize: '11px',
+                fontWeight: 600,
+                background: '#EFF6FF',
+                color: '#1D4ED8',
+                padding: '4px 8px',
+                borderRadius: '6px',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px'
+              }}
+              title="Browser auto-submission requires local desktop Playwright daemon"
+            >
+              <ShieldAlert size={13} /> Playwright: Local Agent Only (Dry-Run Preview)
+            </span>
+          )}
+          <span
+            className="sourceBadge"
+            style={{
+              background: emergencyStopped ? '#FEE2E2' : '#E7F6EA',
+              color: emergencyStopped ? '#DC2626' : '#0BA02C'
+            }}
+          >
+            {emergencyStopped ? 'EMERGENCY STOPPED' : 'IDLE / READY'}
+          </span>
+        </div>
       </div>
 
       <div className="automationLimits">
@@ -1466,7 +1724,22 @@ function AutomationPanel({ cid, demoMode, emergencyStopped, onEmergencyStop, onR
         </label>
         <label>
           <input type="checkbox" checked={submissions} onChange={e => setSubmissions(e.target.checked)} />
-          Allow auto-submissions when server kill switch & checks pass
+          <span>Allow auto-submissions when server kill switch & checks pass</span>
+          {(demoMode || isVercel) && (
+            <span
+              style={{
+                marginLeft: 8,
+                fontSize: 11,
+                background: '#EFF6FF',
+                color: '#1D4ED8',
+                padding: '2px 6px',
+                borderRadius: 4,
+                fontWeight: 600
+              }}
+            >
+              Local Agent Only (Dry-Run Preview)
+            </span>
+          )}
         </label>
       </div>
 
@@ -1635,7 +1908,7 @@ function JobList({ jobs, save, makeDoc, prepare }) {
               </button>
               <button
                 className="iconButton"
-                title="Prepare application form"
+                title={demoMode || isVercel ? "Playwright Auto-Submission (Local Agent Only - Dry-Run Preview)" : "Prepare application form"}
                 onClick={() => prepare(j)}
               >
                 <Send size={15} />
