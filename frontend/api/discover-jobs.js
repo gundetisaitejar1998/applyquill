@@ -10,7 +10,7 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 4500) {
       ...options,
       signal: controller.signal,
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Jobpilot-Career-Workspace/1.0',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) ApplyQuill-Career-Workspace/1.0',
         'Accept': 'application/json',
         ...(options.headers || {})
       }
@@ -179,7 +179,7 @@ async function fetchRemoteOK() {
   try {
     const url = 'https://remoteok.com/api';
     const res = await fetchWithTimeout(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0 Jobpilot-Career-Workspace/1.0' }
+      headers: { 'User-Agent': 'Mozilla/5.0 ApplyQuill-Career-Workspace/1.0' }
     }, 4500);
     if (!res.ok) return { source: 'Remote OK', jobs: [], status: `HTTP ${res.status}` };
     const data = await res.json();

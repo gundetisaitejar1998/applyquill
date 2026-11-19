@@ -478,7 +478,7 @@ export default async function handler(req, res) {
       ],
       roles,
       roles_meta: {
-        model: 'Jobpilot Domain-Agnostic ATS Engine (Node.js)',
+        model: 'ApplyQuill Domain-Agnostic ATS Engine (Node.js)',
         domain: primaryDomain,
         notice: `Extracted ${skills.length} competencies across ${primaryDomain}. Generated ${roles.length} evidence-backed target roles.`
       },

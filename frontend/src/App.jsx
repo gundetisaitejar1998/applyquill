@@ -60,7 +60,7 @@ async function req(path, options = {}) {
   const headers = new Headers(options.headers || {});
   const method = (options.method || 'GET').toUpperCase();
   if (!['GET', 'HEAD', 'OPTIONS'].includes(method) && !path.startsWith('/auth/login') && !path.startsWith('/auth/register')) {
-    const token = readCookie('jobpilot_csrf');
+    const token = readCookie('applyquill_csrf') || readCookie('jobpilot_csrf');
     if (token) headers.set('X-CSRF-Token', decodeURIComponent(token));
   }
   const r = await fetch(API + path, { ...options, headers, credentials: 'include' });
@@ -126,7 +126,7 @@ export default function App() {
       setStats(DEMO_STATS);
       setRoles(DEMO_ROLES);
       setRolesMeta({
-        model: 'Jobpilot Serverless ATS Engine (Node.js)',
+        model: 'ApplyQuill Serverless ATS Engine (Node.js)',
         notice: 'Real-time multi-source job matching active (Remotive, Arbeitnow, Jobicy, Greenhouse).'
       });
       setSourceReport(DEMO_SOURCE_REPORT);
@@ -298,7 +298,7 @@ export default function App() {
 
     // Serverless Web Mode (Vercel) or Portfolio Demo Mode
     if (demoMode || isVercel) {
-      setNotice(`Analyzing "${f.name}" with Jobpilot Serverless ATS Engine...`);
+      setNotice(`Analyzing "${f.name}" with ApplyQuill Serverless ATS Engine...`);
       try {
         const reader = new FileReader();
         reader.onload = async () => {
@@ -343,7 +343,7 @@ export default function App() {
             setPeople(prev => prev.map(p => (p.id === cid ? updatedCandidate : p)));
             setRoles(data.roles || []);
             setRolesMeta(data.roles_meta || {
-              model: 'Jobpilot Domain-Agnostic ATS Engine (Node.js)',
+              model: 'ApplyQuill Domain-Agnostic ATS Engine (Node.js)',
               notice: `Extracted ${data.skills?.length || 0} skills in ${data.domain || 'your domain'}.`
             });
 
@@ -441,7 +441,7 @@ export default function App() {
 
     if (demoMode || isVercel) {
       try {
-        setNotice('Refreshing evidence-checked role map with Jobpilot ATS Engine...');
+        setNotice('Refreshing evidence-checked role map with ApplyQuill ATS Engine...');
         const skillsText = (candidate?.profile?.skills || []).join(', ');
         const parseRes = await fetch('/api/parse-resume', {
           method: 'POST',
@@ -456,7 +456,7 @@ export default function App() {
           const data = await parseRes.json();
           setRoles(data.roles || []);
           setRolesMeta(data.roles_meta || {
-            model: 'Jobpilot Serverless ATS Engine (Node.js)',
+            model: 'ApplyQuill Serverless ATS Engine (Node.js)',
             notice: `Role map refreshed with ${data.roles?.length || 0} target roles in ${data.domain || 'your domain'}.`
           });
           setNotice(`Role map refreshed with ${data.roles?.length || 0} target roles. Discovering matching live vacancies...`);
@@ -771,7 +771,7 @@ export default function App() {
             <Briefcase size={22} />
           </div>
           <div className="brandInfo">
-            <b>Jobpilot</b>
+            <b>ApplyQuill</b>
             <small>AI CAREER AGENT</small>
           </div>
         </div>
@@ -838,7 +838,7 @@ export default function App() {
                 setDemoMode(!demoMode);
                 setNotice(!demoMode ? 'Switched to Portfolio Demo Mode (Offline / Behance)' : 'Switched to Live Backend Mode');
               }}
-              title={isVercel ? 'Jobpilot Serverless Web Mode (Vercel)' : 'Click to toggle between Portfolio Demo Mode and Live Mode'}
+              title={isVercel ? 'ApplyQuill Serverless Web Mode (Vercel)' : 'Click to toggle between Portfolio Demo Mode and Live Mode'}
             >
               <Sparkles size={13} />
               <span>{isVercel ? 'Cloud Serverless' : (demoMode ? 'Portfolio Demo' : 'Live Mode')}</span>
@@ -925,7 +925,7 @@ export default function App() {
             <div className="panel" style={{ textAlign: 'center', padding: '60px 20px' }}>
               <h2>Start with a candidate profile</h2>
               <p className="muted" style={{ maxWidth: 440, margin: '8px auto 20px' }}>
-                Add a candidate, upload their resume, and Jobpilot will build an evidence-based career profile.
+                Add a candidate, upload their resume, and ApplyQuill will build an evidence-based career profile.
               </p>
               <button className="button primary" onClick={() => setShowAdd(true)}>
                 <Plus size={16} /> Create candidate
@@ -1167,7 +1167,7 @@ export default function App() {
                   {apps.length ? (
                     apps.map(a => (
                       <div className="applicationRow" key={a.id}>
-                        <div className="companyMark">{a.company?.[0] || 'J'}</div>
+                        <div className="companyMark">{a.company?.[0] || 'A'}</div>
                         <div className="jobMain">
                           <div className="jobTitleRow">
                             <b>{a.title}</b>
@@ -1858,7 +1858,7 @@ function JobList({ jobs, query, save, makeDoc, prepare }) {
         const isMid = score >= 40 && score < 70;
         return (
           <div className="jobCard" key={j.id}>
-            <div className="companyMark">{j.company?.[0] || 'J'}</div>
+            <div className="companyMark">{j.company?.[0] || 'A'}</div>
 
             <div className="jobMain">
               <div className="jobTitleRow">
@@ -1975,7 +1975,7 @@ function AuthScreen({ onAuthenticated, error, setError }) {
         <div className="brandIcon" style={{ marginBottom: 16 }}>
           <Briefcase size={22} />
         </div>
-        <div className="eyebrow">JOBPILOT AI CAREER WORKSPACE</div>
+        <div className="eyebrow">APPLYQUILL AI CAREER WORKSPACE</div>
         <h1 style={{ fontSize: 22, margin: '8px 0 6px' }}>{register ? 'Create your account' : 'Welcome back'}</h1>
         <p className="muted" style={{ marginBottom: 20 }}>
           Your candidate profiles and documents are private to your workspace.
@@ -2027,7 +2027,7 @@ function AuthScreen({ onAuthenticated, error, setError }) {
             setError('');
           }}
         >
-          {register ? 'Already have an account? Sign in' : 'New to Jobpilot? Create an account'}
+          {register ? 'Already have an account? Sign in' : 'New to ApplyQuill? Create an account'}
         </button>
       </form>
     </main>
