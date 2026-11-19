@@ -1908,7 +1908,7 @@ function JobList({ jobs, save, makeDoc, prepare }) {
               </button>
               <button
                 className="iconButton"
-                title={demoMode || isVercel ? "Playwright Auto-Submission (Local Agent Only - Dry-Run Preview)" : "Prepare application form"}
+                title={isVercel ? "Playwright Auto-Submission: Local Agent Only (Dry-Run Preview on Web)" : "Prepare application form"}
                 onClick={() => prepare(j)}
               >
                 <Send size={15} />
