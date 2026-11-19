@@ -1,8 +1,5 @@
-import { createRequire } from 'module';
 import mammoth from 'mammoth';
-
-const require = createRequire(import.meta.url);
-const { PDFParse } = require('pdf-parse');
+import { extractText } from 'unpdf';
 
 // Comprehensive taxonomy of modern skills across Design, Engineering, and Product
 const SKILL_TAXONOMY = [
@@ -220,15 +217,13 @@ export default async function handler(req, res) {
         const mammothResult = await mammoth.extractRawText({ buffer });
         extractedText = mammothResult.value || '';
       } else {
-        // PDF parsing
+        // PDF parsing using unpdf (pure JS, zero native binaries, serverless/edge compatible)
         try {
-          const parser = new PDFParse({ data: buffer });
-          await parser.load();
-          const parsed = await parser.getText();
-          extractedText = parsed.text || (parsed.pages ? parsed.pages.map(p => p.text).join('\n') : '');
-          await parser.destroy();
+          const uint8 = new Uint8Array(buffer);
+          const pdfResult = await extractText(uint8);
+          extractedText = Array.isArray(pdfResult.text) ? pdfResult.text.join('\n') : (pdfResult.text || '');
         } catch (pdfErr) {
-          console.warn('PDFParse warning:', pdfErr.message);
+          console.warn('unpdf warning:', pdfErr.message);
           // Fallback stream text extraction
           const rawStr = buffer.toString('binary');
           const matches = rawStr.match(/\((.*?)\)\s*Tj/g) || [];
