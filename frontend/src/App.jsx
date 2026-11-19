@@ -261,10 +261,17 @@ export default function App() {
     setError('');
 
     if (demoMode) {
-      setTimeout(() => {
-        setNotice(`Resume "${f.name}" parsed (${f.size.toLocaleString()} bytes). Role map and skill tokens refreshed!`);
-        setBusy(false);
-      }, 700);
+      const fileName = f.name;
+      setCandidate(prev => ({
+        ...prev,
+        resume_name: fileName,
+        resume_path: `/uploads/resumes/${fileName}`
+      }));
+      setPeople(prev =>
+        prev.map(p => (p.id === cid ? { ...p, resume_name: fileName, resume_path: `/uploads/resumes/${fileName}` } : p))
+      );
+      setNotice('Resume updated in Demo Mode — local parsing runs on localhost');
+      setBusy(false);
       return;
     }
 
@@ -534,10 +541,14 @@ export default function App() {
 
   const uploadInput = (
     <input
-      hidden
       type="file"
       accept=".pdf,.docx"
-      onChange={e => doUpload(e.target.files[0])}
+      style={{ display: 'none' }}
+      onChange={e => {
+        const file = e.target.files?.[0];
+        if (file) doUpload(file);
+        e.target.value = '';
+      }}
     />
   );
 
@@ -760,7 +771,7 @@ export default function App() {
                             <b>{candidate.resume_name}</b>
                             <small style={{ color: '#767F8C' }}>Resume uploaded · 14 core competencies extracted</small>
                           </div>
-                          <label className="button outline small">
+                          <label className="button outline small" style={{ cursor: 'pointer' }}>
                             Replace
                             {uploadInput}
                           </label>
