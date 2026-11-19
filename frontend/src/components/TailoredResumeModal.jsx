@@ -9,14 +9,14 @@ export default function TailoredResumeModal({ job, candidate, onClose }) {
 ================================================================================
 TAILORED RESUME: ${candidate.name}
 TARGET ROLE: ${job.title} at ${job.company}
-ATS MATCH SCORE: ${job.match?.score || 95}%
+ATS MATCH SCORE: ${job.match?.score ?? 15}%
 ================================================================================
 
 CONTACT:
-Email: ${candidate.email}
-Phone: ${candidate.phone}
-Portfolio: ${candidate.profile?.portfolio_url || 'https://behance.net/gallery/ramya-portfolio'}
-LinkedIn: ${candidate.profile?.linkedin_url || 'https://linkedin.com/in/ramya-narayanan'}
+Email: ${candidate.email || 'N/A'}
+Phone: ${candidate.phone || 'N/A'}
+Portfolio: ${candidate.profile?.portfolio_url || 'N/A'}
+LinkedIn: ${candidate.profile?.linkedin_url || 'N/A'}
 Location: ${candidate.location}
 
 --------------------------------------------------------------------------------
@@ -69,7 +69,7 @@ ${(candidate.profile?.certifications || []).map(c => `• ${c}`).join('\n')}
             <div className="tailoredCompany">
               <Building size={14} /> {job.company} · <MapPin size={14} /> {job.location} · 
               <span className="atsScorePill">
-                <CheckCircle size={13} /> {job.match?.score || 95}% ATS Match Score
+                <CheckCircle size={13} /> {job.match?.score ?? 15}% ATS Match Score
               </span>
             </div>
           </div>

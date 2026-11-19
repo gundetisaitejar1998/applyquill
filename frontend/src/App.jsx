@@ -313,13 +313,13 @@ export default function App() {
               })
             });
 
+            const data = await resp.json().catch(() => ({}));
+
             if (!resp.ok) {
-              const errData = await resp.json().catch(() => ({}));
-              throw new Error(errData.error || `HTTP ${resp.status}`);
+              throw new Error(data.error || `HTTP ${resp.status}: Failed to parse resume.`);
             }
 
-            const data = await resp.json();
-            const candName = data.name && data.name !== 'Candidate' ? data.name : (candidate?.name || 'Ramya Narayanan');
+            const candName = data.name && data.name !== 'Candidate' ? data.name : (candidate?.name || 'Candidate');
 
             const updatedCandidate = {
               ...(candidate || {}),
@@ -331,9 +331,9 @@ export default function App() {
                 ...(candidate?.profile || {}),
                 skills: data.skills || [],
                 experience: data.experience || [],
-                portfolio_url: data.profile?.portfolio_url || candidate?.profile?.portfolio_url,
-                linkedin_url: data.profile?.linkedin_url || candidate?.profile?.linkedin_url,
-                work_authorization: data.profile?.work_authorization || 'Authorized for Global Remote',
+                portfolio_url: data.profile?.portfolio_url || candidate?.profile?.portfolio_url || '',
+                linkedin_url: data.profile?.linkedin_url || candidate?.profile?.linkedin_url || '',
+                work_authorization: data.profile?.work_authorization || 'Authorized for Employment',
                 profile_verified: true,
                 extraction_note: data.profile?.extraction_note
               }
@@ -343,19 +343,20 @@ export default function App() {
             setPeople(prev => prev.map(p => (p.id === cid ? updatedCandidate : p)));
             setRoles(data.roles || []);
             setRolesMeta(data.roles_meta || {
-              model: 'Jobpilot Serverless ATS Engine (Node.js)',
-              notice: `Extracted ${data.skills?.length || 0} skills from ${data.filename}.`
+              model: 'Jobpilot Domain-Agnostic ATS Engine (Node.js)',
+              notice: `Extracted ${data.skills?.length || 0} skills in ${data.domain || 'your domain'}.`
             });
 
-            setNotice(`Resume "${data.filename}" parsed! Extracted ${data.skills?.length || 0} skills & generated ${data.roles?.length || 0} target roles. Discovering matching live vacancies...`);
+            setNotice(`Resume "${data.filename}" parsed! Extracted ${data.skills?.length || 0} competencies in ${data.domain || 'field'}. Discovering live matching jobs...`);
 
-            // Immediately trigger live job discovery matching the uploaded resume skills & roles
+            // Immediately re-score and discover live jobs matching the candidate's new primary role & skills
             try {
+              const primarySearchQuery = data.roles?.[0]?.title ? data.roles[0].title.split(/\s+/).slice(0, 2).join(' ') : '';
               const discRes = await fetch('/api/discover-jobs', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                  query: data.roles?.[0]?.title ? data.roles[0].title.split(' ')[0] : '',
+                  query: primarySearchQuery,
                   location: location || '',
                   posted_range: postedRange,
                   skills: data.skills || [],
@@ -364,32 +365,26 @@ export default function App() {
               });
               if (discRes.ok) {
                 const discData = await discRes.json();
-                if (discData.jobs && discData.jobs.length > 0) {
-                  setJobs(discData.jobs);
-                  if (discData.source_report) setSourceReport(discData.source_report);
-                  setStats(prev => ({
-                    ...prev,
-                    discovered_today: discData.jobs.length,
-                    eligible: discData.jobs.filter(j => (j.match?.score || 0) >= 80).length,
-                    average_match: Math.round(discData.jobs.reduce((acc, j) => acc + (j.match?.score || 85), 0) / discData.jobs.length)
-                  }));
-                  setNotice(`Resume parsed & ${discData.jobs.length} live vacancies matched across Remotive, Arbeitnow, Jobicy & Greenhouse.`);
-                }
+                const found = discData.jobs || [];
+                setJobs(found);
+                if (discData.source_report) setSourceReport(discData.source_report);
+                setStats(prev => ({
+                  ...prev,
+                  discovered_today: found.length,
+                  eligible: found.filter(j => (j.match?.score || 0) >= 70).length,
+                  average_match: found.length
+                    ? Math.round(found.reduce((acc, j) => acc + (j.match?.score || 15), 0) / found.length)
+                    : 0
+                }));
+                setNotice(`Resume parsed! Extracted ${data.skills?.length || 0} skills. Found ${found.length} matching live vacancies in ${data.domain || 'your field'}.`);
               }
             } catch (discErr) {
               console.warn('Job discovery fetch error:', discErr);
             }
           } catch (parseErr) {
             console.error('Parse error:', parseErr);
-            setCandidate(prev => ({
-              ...prev,
-              resume_name: f.name,
-              resume_path: `/uploads/resumes/${f.name}`
-            }));
-            setPeople(prev =>
-              prev.map(p => (p.id === cid ? { ...p, resume_name: f.name, resume_path: `/uploads/resumes/${f.name}` } : p))
-            );
-            setNotice(`Resume updated to ${f.name}. (${parseErr.message})`);
+            setError(parseErr.message || 'Failed to parse resume.');
+            setNotice('');
           } finally {
             setBusy(false);
           }
@@ -453,50 +448,49 @@ export default function App() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             filename: candidate?.resume_name || 'resume.pdf',
-            text: `${candidate?.name || 'Candidate'}\n${candidate?.summary || ''}\nKey Competencies: ${skillsText}\n${(candidate?.profile?.experience || []).join('\n')}`
+            text: `${candidate?.name || 'Candidate'}\n${candidate?.summary || ''}\nCore Competencies: ${skillsText}\n${(candidate?.profile?.experience || []).join('\n')}`
           })
         });
 
         if (parseRes.ok) {
           const data = await parseRes.json();
-          setRoles(data.roles || DEMO_ROLES);
+          setRoles(data.roles || []);
           setRolesMeta(data.roles_meta || {
             model: 'Jobpilot Serverless ATS Engine (Node.js)',
-            notice: `Role map refreshed with ${data.roles?.length || 0} evidence-checked target roles.`
+            notice: `Role map refreshed with ${data.roles?.length || 0} target roles in ${data.domain || 'your domain'}.`
           });
-          setNotice(`Role map refreshed with ${data.roles?.length || DEMO_ROLES.length} target roles. Discovering matching live vacancies...`);
+          setNotice(`Role map refreshed with ${data.roles?.length || 0} target roles. Discovering matching live vacancies...`);
 
+          const primarySearchQuery = data.roles?.[0]?.title ? data.roles[0].title.split(/\s+/).slice(0, 2).join(' ') : '';
           const discRes = await fetch('/api/discover-jobs', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              query: data.roles?.[0]?.title ? data.roles[0].title.split(' ')[0] : '',
+              query: primarySearchQuery,
               location: location || '',
               posted_range: postedRange,
               skills: data.skills || candidate?.profile?.skills || [],
-              roles: data.roles || DEMO_ROLES
+              roles: data.roles || []
             })
           });
           if (discRes.ok) {
             const discData = await discRes.json();
-            if (discData.jobs && discData.jobs.length > 0) {
-              setJobs(discData.jobs);
-              if (discData.source_report) setSourceReport(discData.source_report);
-              setStats(prev => ({
-                ...prev,
-                discovered_today: discData.jobs.length,
-                eligible: discData.jobs.filter(j => (j.match?.score || 0) >= 80).length
-              }));
-            }
+            const found = discData.jobs || [];
+            setJobs(found);
+            if (discData.source_report) setSourceReport(discData.source_report);
+            setStats(prev => ({
+              ...prev,
+              discovered_today: found.length,
+              eligible: found.filter(j => (j.match?.score || 0) >= 70).length
+            }));
           }
         } else {
-          setRoles(DEMO_ROLES);
-          setNotice('Role map refreshed with high-confidence Product & UI/UX Design titles.');
+          const errData = await parseRes.json().catch(() => ({}));
+          setError(errData.error || 'Failed to refresh role map.');
         }
       } catch (err) {
-        console.warn('discoverRoles fallback error:', err);
-        setRoles(DEMO_ROLES);
-        setNotice('Role map refreshed with high-confidence Product & UI/UX Design titles.');
+        console.error('discoverRoles error:', err);
+        setError(err.message || 'Failed to refresh role map.');
       } finally {
         setBusy(false);
       }
@@ -523,7 +517,7 @@ export default function App() {
 
     if (demoMode || isVercel) {
       try {
-        setNotice(`Searching live vacancies across Remotive, Arbeitnow, Jobicy, and Greenhouse for "${query || 'All Roles'}"...`);
+        setNotice(`Searching live vacancies across Remotive, Arbeitnow, Jobicy, Remote OK & Greenhouse for "${query || 'All Roles'}"...`);
         const res = await fetch('/api/discover-jobs', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -532,40 +526,33 @@ export default function App() {
             location: location.trim(),
             posted_range: postedRange,
             skills: candidate?.profile?.skills || [],
-            roles: roles.length ? roles : DEMO_ROLES
+            roles: roles.length ? roles : []
           })
         });
 
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
-        if (data.jobs && data.jobs.length > 0) {
-          setJobs(data.jobs);
-          if (data.source_report) setSourceReport(data.source_report);
-          setStats(prev => ({
-            ...prev,
-            discovered_today: data.jobs.length,
-            eligible: data.jobs.filter(j => (j.match?.score || 0) >= 80).length,
-            average_match: Math.round(data.jobs.reduce((acc, j) => acc + (j.match?.score || 85), 0) / data.jobs.length)
-          }));
-          setNotice(`Found ${data.jobs.length} live vacancies matching "${query || 'All Roles'}" across Remotive, Arbeitnow, Jobicy & Greenhouse.`);
+        const foundJobs = data.jobs || [];
+
+        setJobs(foundJobs);
+        if (data.source_report) setSourceReport(data.source_report);
+        setStats(prev => ({
+          ...prev,
+          discovered_today: foundJobs.length,
+          eligible: foundJobs.filter(j => (j.match?.score || 0) >= 70).length,
+          average_match: foundJobs.length
+            ? Math.round(foundJobs.reduce((acc, j) => acc + (j.match?.score || 15), 0) / foundJobs.length)
+            : 0
+        }));
+
+        if (foundJobs.length === 0) {
+          setNotice(`No live vacancies matched "${query}" on connected remote job boards. Try broadening your keyword or location.`);
         } else {
-          const filtered = DEMO_JOBS.filter(j => {
-            const matchQuery = !query.trim() || j.title.toLowerCase().includes(query.toLowerCase()) || j.company.toLowerCase().includes(query.toLowerCase());
-            const matchLoc = !location.trim() || j.location.toLowerCase().includes(location.toLowerCase());
-            return matchQuery && matchLoc;
-          });
-          setJobs(filtered.length ? filtered : DEMO_JOBS);
-          setNotice(`Displaying ${filtered.length || DEMO_JOBS.length} vacancies.`);
+          setNotice(`Found ${foundJobs.length} live vacancies matching "${query || 'All Roles'}".`);
         }
       } catch (err) {
-        console.warn('Live search fallback error:', err);
-        const filtered = DEMO_JOBS.filter(j => {
-          const matchQuery = !query.trim() || j.title.toLowerCase().includes(query.toLowerCase()) || j.company.toLowerCase().includes(query.toLowerCase());
-          const matchLoc = !location.trim() || j.location.toLowerCase().includes(location.toLowerCase());
-          return matchQuery && matchLoc;
-        });
-        setJobs(filtered.length ? filtered : DEMO_JOBS);
-        setNotice(`Found ${filtered.length || DEMO_JOBS.length} vacancies matching "${query || 'Design Roles'}".`);
+        console.error('Live search error:', err);
+        setError(err.message || 'Failed to search live jobs.');
       } finally {
         setBusy(false);
       }
@@ -1080,6 +1067,7 @@ export default function App() {
 
                     <JobList
                       jobs={jobs.slice(0, 5)}
+                      query={query}
                       save={saveApplication}
                       makeDoc={generateDoc}
                       prepare={prepareApplication}
@@ -1103,6 +1091,7 @@ export default function App() {
 
                   <JobList
                     jobs={filterPosted(jobs, postedRange)}
+                    query={query}
                     save={saveApplication}
                     makeDoc={generateDoc}
                     prepare={prepareApplication}
@@ -1156,6 +1145,7 @@ export default function App() {
 
                   <JobList
                     jobs={filterPosted(jobs, postedRange)}
+                    query={query}
                     save={saveApplication}
                     makeDoc={generateDoc}
                     prepare={prepareApplication}
@@ -1219,6 +1209,7 @@ export default function App() {
 
                   <JobList
                     jobs={filterPosted(jobs, postedRange)}
+                    query={query}
                     save={saveApplication}
                     makeDoc={generateDoc}
                     prepare={prepareApplication}
@@ -1845,94 +1836,110 @@ function filterPosted(jobs, range) {
   });
 }
 
-function JobList({ jobs, save, makeDoc, prepare }) {
+function JobList({ jobs, query, save, makeDoc, prepare }) {
   if (!jobs?.length) {
     return (
-      <div style={{ textAlign: 'center', padding: '40px 10px', color: '#767F8C' }}>
-        No matching vacancies found. Try adjusting keywords or location filters.
+      <div style={{ textAlign: 'center', padding: '50px 20px', color: '#64748B' }}>
+        <h3 style={{ fontSize: 17, color: '#1E293B', marginBottom: 6 }}>No live vacancies found</h3>
+        <p style={{ maxWidth: 460, margin: '0 auto', fontSize: 14 }}>
+          {query
+            ? `No live vacancies matched '${query}' on connected remote job boards. Try broadening your keyword or location.`
+            : 'No live vacancies matched your current search filters. Try adjusting keywords or location.'}
+        </p>
       </div>
     );
   }
 
   return (
     <div className="jobList">
-      {jobs.map(j => (
-        <div className="jobCard" key={j.id}>
-          <div className="companyMark">{j.company?.[0] || 'J'}</div>
+      {jobs.map(j => {
+        const score = j.match?.score ?? 15;
+        const isHigh = score >= 70;
+        const isMid = score >= 40 && score < 70;
+        return (
+          <div className="jobCard" key={j.id}>
+            <div className="companyMark">{j.company?.[0] || 'J'}</div>
 
-          <div className="jobMain">
-            <div className="jobTitleRow">
-              <b>{j.title}</b>
-              <span className="jobTag" style={{ background: '#E7F0FA', color: '#0A65CC', border: 0 }}>
-                {j.work_mode || 'Remote'}
-              </span>
-              <span className="jobTag" style={{ background: '#E7F6EA', color: '#0BA02C', border: 0 }}>
-                {j.job_type || 'Full Time'}
-              </span>
-            </div>
+            <div className="jobMain">
+              <div className="jobTitleRow">
+                <b>{j.title}</b>
+                <span className="jobTag" style={{ background: '#E7F0FA', color: '#0A65CC', border: 0 }}>
+                  {j.work_mode || 'Remote'}
+                </span>
+                <span className="jobTag" style={{ background: '#E7F6EA', color: '#0BA02C', border: 0 }}>
+                  {j.job_type || 'Full Time'}
+                </span>
+              </div>
 
-            <div className="jobMetaRow">
-              <span><Building size={14} /> {j.company}</span>
-              <span><MapPin size={14} /> {j.location}</span>
-              {j.salary_min && (
+              <div className="jobMetaRow">
+                <span><Building size={14} /> {j.company}</span>
+                <span><MapPin size={14} /> {j.location}</span>
                 <span>
-                  ₹{(j.salary_min / 100000).toFixed(0)}L - ₹{(j.salary_max / 100000).toFixed(0)}L
+                  {j.salary_min && j.salary_max && j.salary_min > 0
+                    ? `₹${(j.salary_min / 100000).toFixed(0)}L - ₹${(j.salary_max / 100000).toFixed(0)}L`
+                    : (j.salary_text || 'Salary not disclosed')}
                 </span>
-              )}
-              {j.source && <span style={{ opacity: 0.8 }}>via {j.source}</span>}
+                {j.source && <span style={{ opacity: 0.8 }}>via {j.source}</span>}
+              </div>
+
+              <p className="jobDesc">{j.description}</p>
+
+              <div className="jobTags">
+                {(j.match?.matching_skills || []).map(skill => (
+                  <span className="jobTag" key={skill}>
+                    {skill}
+                  </span>
+                ))}
+              </div>
             </div>
 
-            <p className="jobDesc">{j.description}</p>
+            <div className="jobActions">
+              <div
+                className="matchScorePill"
+                style={{
+                  background: isHigh ? '#E7F6EA' : isMid ? '#FEF3C7' : '#F1F5F9',
+                  color: isHigh ? '#0BA02C' : isMid ? '#D97706' : '#64748B'
+                }}
+              >
+                <CheckCircle2 size={14} /> {score}% Match
+              </div>
 
-            <div className="jobTags">
-              {(j.match?.matching_skills || []).map(skill => (
-                <span className="jobTag" key={skill}>
-                  {skill}
-                </span>
-              ))}
+              <div className="actionButtonGroup">
+                <button
+                  className="button outline small"
+                  title="Inspect tailored summary & download DOCX"
+                  onClick={() => makeDoc(j)}
+                >
+                  <FileText size={14} /> Tailored Resume
+                </button>
+                <button
+                  className="iconButton"
+                  title={isVercel ? "Playwright Auto-Submission: Local Agent Only (Dry-Run Preview on Web)" : "Prepare application form"}
+                  onClick={() => prepare(j)}
+                >
+                  <Send size={15} />
+                </button>
+                <button
+                  className="iconButton"
+                  title="Track in Applications"
+                  onClick={() => save(j)}
+                >
+                  <Plus size={15} />
+                </button>
+                <a
+                  className="iconButton"
+                  title="Open original listing"
+                  href={j.url}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  <ArrowUpRight size={15} />
+                </a>
+              </div>
             </div>
           </div>
-
-          <div className="jobActions">
-            <div className="matchScorePill">
-              <CheckCircle2 size={14} /> {j.match?.score || 90}% Match
-            </div>
-
-            <div className="actionButtonGroup">
-              <button
-                className="button outline small"
-                title="Inspect tailored summary & download DOCX"
-                onClick={() => makeDoc(j)}
-              >
-                <FileText size={14} /> Tailored Resume
-              </button>
-              <button
-                className="iconButton"
-                title={isVercel ? "Playwright Auto-Submission: Local Agent Only (Dry-Run Preview on Web)" : "Prepare application form"}
-                onClick={() => prepare(j)}
-              >
-                <Send size={15} />
-              </button>
-              <button
-                className="iconButton"
-                title="Track in Applications"
-                onClick={() => save(j)}
-              >
-                <Plus size={15} />
-              </button>
-              <a
-                className="iconButton"
-                title="Open original listing"
-                href={j.url}
-                target="_blank"
-                rel="noreferrer"
-              >
-                <ArrowUpRight size={15} />
-              </a>
-            </div>
-          </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
