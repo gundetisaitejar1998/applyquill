@@ -1,5 +1,7 @@
 # JobPilot AI
 
+For the current zero-cost hosting evaluation, local service status, and deployment blockers, see [FREE_DEPLOYMENT_STATUS.md](FREE_DEPLOYMENT_STATUS.md).
+
 JobPilot AI is a multi-candidate job discovery and application-preparation platform built on the existing React/Vite and FastAPI project. SQLite supports local use; PostgreSQL and Alembic are configured for production. Candidate-owned resumes, profiles, jobs, documents, application records, automation queues, and audit events are isolated by authenticated account.
 
 ## What works

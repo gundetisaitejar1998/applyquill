@@ -1,5 +1,7 @@
 # Production deployment
 
+> For the latest zero-cost provider comparison and current laptop service status, see [FREE_DEPLOYMENT_STATUS.md](../FREE_DEPLOYMENT_STATUS.md). The former paid Render Blueprint is intentionally disabled; do not apply a paid deployment for this project.
+
 ## Hosting recommendation
 
 The Render Blueprint provisions a Docker web service, managed PostgreSQL, deploy-time Alembic migrations, HTTPS, and a persistent disk. It is configured for one instance and one Uvicorn worker. PostgreSQL stores the durable automation queue and audit history; resumes, generated documents, and browser profiles use the attached disk. This is a single-instance deployment footprint. Move documents to private shared object storage and introduce a dedicated worker/concurrency strategy before scaling horizontally.
